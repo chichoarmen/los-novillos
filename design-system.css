@@ -1,0 +1,147 @@
+/* ===========================================================
+   LOS NOVILLOS — SISTEMA DE DISEÑO
+   Tokens y componentes reales de la app (nada de esto es
+   decoración de prototipo: cada clase de aquí se usa en las
+   pantallas de app-cliente.html, app-chofer.html, app-equipo.html
+   y en la interfaz de chat de bot-whatsapp.html)
+   =========================================================== */
+
+:root{
+  /* Paleta */
+  --navy:#0F2542;
+  --navy-2:#17335C;
+  --navy-3:#22456F;
+  --ink:#16233A;
+  --gray-900:#1F2937;
+  --gray-700:#3E4859;
+  --gray-600:#5B6472;
+  --gray-500:#7A8494;
+  --gray-400:#9AA4B2;
+  --gray-300:#C4CBD4;
+  --gray-200:#E1E6ED;
+  --gray-100:#EEF1F5;
+  --gray-50:#F7F8FA;
+  --white:#FFFFFF;
+  --green:#1E9E63;
+  --green-bg:#E7F6EE;
+  --orange:#E38C1D;
+  --orange-bg:#FDF1E0;
+  --red:#D6455A;
+  --red-bg:#FBE9EC;
+  --gold:#B98A3E;
+  --gold-bg:#F6EFE1;
+
+  /* WhatsApp */
+  --wa:#25D366;
+  --wa-dark:#075E54;
+  --wa-in:#FFFFFF;
+  --wa-out:#DCF8C6;
+
+  /* Sombras y radios */
+  --shadow-sm:0 1px 2px rgba(15,37,66,.08);
+  --shadow-md:0 6px 20px rgba(15,37,66,.10);
+  --radius:14px;
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:var(--gray-50);
+  color:var(--ink);
+  font-family:'Inter', sans-serif;
+}
+
+/* Tipografías: Manrope (títulos/marca), Inter (texto), JetBrains Mono (números/datos) */
+
+/* ---------- estructura base de pantalla ---------- */
+.app-screen{
+  display:flex;
+  flex-direction:column;
+  height:100%;
+  background:var(--gray-50);
+}
+.statusbar{
+  height:36px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;
+  padding:0 22px;font-family:'Inter';font-size:11px;font-weight:600;background:#fff;
+}
+.appbar{
+  padding:12px 18px 10px;background:#fff;border-bottom:1px solid var(--gray-200);flex-shrink:0;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+}
+.appbar-back{cursor:pointer;font-size:15px;color:var(--navy);}
+.appbar-title{font-family:'Manrope';font-weight:700;font-size:15px;color:var(--navy);}
+.appbar-sub{font-family:'Inter';font-size:10.5px;color:var(--gray-500);}
+.app-body{flex:1;overflow-y:auto;padding:14px;}
+.tabbar{
+  height:54px;flex-shrink:0;background:#fff;border-top:1px solid var(--gray-200);
+  display:flex;align-items:center;justify-content:space-around;
+}
+.tabitem{
+  display:flex;flex-direction:column;align-items:center;gap:3px;font-family:'Inter';font-size:9.5px;
+  font-weight:700;color:var(--gray-400);cursor:pointer;background:none;border:none;
+}
+.tabitem.active{color:var(--navy);}
+.tabitem .ic{width:18px;height:18px;border-radius:5px;background:var(--gray-200);}
+.tabitem.active .ic{background:var(--navy);}
+
+/* ---------- componentes generales ---------- */
+.card{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);box-shadow:var(--shadow-sm);}
+.tag{display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono';font-size:11px;font-weight:600;padding:4px 10px;border-radius:100px;letter-spacing:.02em;}
+.tag.green{background:var(--green-bg);color:var(--green);}
+.tag.orange{background:var(--orange-bg);color:var(--orange);}
+.tag.red{background:var(--red-bg);color:var(--red);}
+.tag.gray{background:var(--gray-100);color:var(--gray-600);}
+.tag.navy{background:#E7ECF4;color:var(--navy);}
+.tag.gold{background:var(--gold-bg);color:var(--gold);}
+
+.btn{font-family:'Manrope';font-weight:700;font-size:13px;border-radius:9px;padding:11px 18px;border:none;cursor:pointer;}
+.btn-primary{background:var(--navy);color:#fff;}
+.btn-secondary{background:var(--gray-100);color:var(--gray-700);}
+.btn-wa{background:var(--wa);color:#fff;}
+.btn-sm{padding:7px 12px;font-size:11.5px;border-radius:7px;}
+.btn:disabled{opacity:.45;cursor:not-allowed;}
+
+input,select,textarea{
+  font-family:'Inter';font-size:13px;padding:10px 12px;border:1.5px solid var(--gray-200);border-radius:8px;
+  width:100%;background:#fff;color:var(--ink);
+}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy-3);}
+label.field-label{font-family:'Inter';font-size:11.5px;font-weight:600;color:var(--gray-600);display:block;margin-bottom:5px;}
+
+/* ---------- inicio de sesión / registro ---------- */
+.auth-screen{flex:1;display:flex;flex-direction:column;padding:26px 20px;overflow-y:auto;background:#fff;}
+.auth-logo{height:30px;margin:0 auto 6px;display:block;}
+.auth-sub{text-align:center;font-family:'Inter';font-size:10.5px;color:var(--gray-500);margin-bottom:20px;}
+.auth-input{margin-bottom:10px;}
+.auth-link{text-align:center;font-family:'Inter';font-size:11px;color:var(--navy-3);margin-top:14px;cursor:pointer;text-decoration:underline;}
+.auth-divider{display:flex;align-items:center;gap:8px;margin:14px 0;color:var(--gray-400);font-family:'Inter';font-size:10px;}
+.auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--gray-200);}
+
+/* ---------- firma digital (canvas real) ---------- */
+.sig-canvas-wrap{border:1.5px dashed var(--gray-300);border-radius:8px;position:relative;background:#fff;}
+.sig-canvas-wrap canvas{display:block;width:100%;touch-action:none;cursor:crosshair;}
+.sig-clear{position:absolute;top:4px;right:6px;font-family:'Inter';font-size:9px;color:var(--gray-400);background:none;border:none;cursor:pointer;text-decoration:underline;}
+
+/* ---------- chat de WhatsApp ---------- */
+.wa-frame{background:#E7DDD3;height:100%;display:flex;flex-direction:column;}
+.wa-top{background:var(--wa-dark);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0;}
+.wa-avatar{width:30px;height:30px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-family:'Manrope';font-weight:700;color:#fff;font-size:12px;}
+.wa-name{font-family:'Inter';font-weight:700;font-size:13px;}
+.wa-status{font-family:'Inter';font-size:10px;color:#CFE9E4;}
+.wa-msgs{flex:1;padding:12px 10px;display:flex;flex-direction:column;gap:7px;overflow-y:auto;}
+.bubble{max-width:82%;padding:8px 11px;border-radius:10px;font-family:'Inter';font-size:12px;line-height:1.4;box-shadow:0 1px 1px rgba(0,0,0,.06);color:#111;}
+.bubble.in{background:var(--wa-in);align-self:flex-start;border-top-left-radius:2px;}
+.bubble.out{background:var(--wa-out);align-self:flex-end;border-top-right-radius:2px;}
+.bubble .time{display:block;text-align:right;font-size:9px;color:#8b9a8f;margin-top:2px;}
+.wa-options{display:flex;flex-direction:column;gap:6px;padding:8px 10px 12px;background:#E7DDD3;flex-shrink:0;}
+.wa-opt-btn{background:#fff;border:1.5px solid var(--wa);color:var(--wa-dark);font-family:'Inter';font-weight:700;font-size:11.5px;border-radius:8px;padding:9px;cursor:pointer;}
+.wa-opt-btn:hover{background:var(--wa);color:#fff;}
+
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-thumb{background:var(--gray-300);border-radius:4px;}
+
+/* alias usado por la lógica de la app (mismo componente que .app-body) */
+.phone-body{flex:1;overflow-y:auto;padding:14px;}
+
+html,body{height:100%;}
+#app-root{height:100vh;display:flex;flex-direction:column;max-width:480px;margin:0 auto;background:#F7F8FA;box-shadow:0 0 40px rgba(0,0,0,.08);}

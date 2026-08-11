@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Los Novillos — App Cliente</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="design-system.css">
+</head>
+<body>
+<div id="app-root">
+  <div id="cliente-content" style="flex:1;display:flex;flex-direction:column;overflow:hidden;"></div>
+  <div class="tabbar">
+    <button class="tabitem active" id="ctab-pedir" onclick="lnClienteTab('pedir')"><div class="ic"></div>Pedir viaje</button>
+    <button class="tabitem" id="ctab-viaje" onclick="lnClienteTab('viaje')"><div class="ic"></div>Mi viaje</button>
+    <button class="tabitem" id="ctab-cuenta" onclick="lnClienteTab('cuenta')"><div class="ic"></div>Mi cuenta</button>
+  </div>
+</div>
+
+<script>
+const CONST = {
+  TARIFA_KM_JAULA_SIMPLE: 4100, TARIFA_KM_BITREN: 6000, PORCENTAJE_KM_PLUS: 0.05,
+  MIN_KM_PLUS_CANJE: 500, MIN_KM_PLUS_POR_OPERACION: 100, MAX_PORC_VIAJE_CON_KM_PLUS: 0.30,
+  TASA_INTERES_ANUAL: 0.15, DIAS_ASIGNACION_CHOFER: 1, DIAS_ALERTA_VENCIMIENTO: 15,
+};
+function money(n){ return '$' + Math.round(n).toLocaleString('es-AR'); }
+window.LOGO_WHITE = 'logo-white.png';
+window.LOGO_NAVY = 'logo-navy.png';
+</script>
+<script>
+(function(){
+  
+  let clienteState = {
+    tab: 'pedir',
+    authed: false, authMode: 'login',
+    pedido: {origen:'Estancia La Aurora, Azul', destino:'Frigorífico Cañuelas', tipo:'hacienda', cabezas:62, km:340, fecha:''},
+    cotizado: false,
+    viajeEstado: 'pedido', // pedido -> confirmado -> asignado -> en_ruta -> en_carga -> entregado
+    propuesta: null,
+  };
+
+  function explain(t){ const el = document.getElementById('cliente-explainer'); if(el) el.textContent = t; }
+
+  window.lnClienteTab = function(tab){
+    clienteState.tab = tab;
+    ['pedir','viaje','cuenta'].forEach(t=>{
+      document.getElementById('ctab-'+t).classList.toggle('active', t===tab);
+    });
+    render();
+  };
+
+  function calcTarifa(){
+    const tarifa = clienteState.pedido.tipo === 'granos' ? CONST.TARIFA_KM_BITREN : CONST.TARIFA_KM_JAULA_SIMPLE;
+    return tarifa * clienteState.pedido.km;
+  }
+
+  function renderAuth(el){
+    document.querySelector('.tabbar').style.display = 'none';
+    explain('Antes de pedir un viaje, el cliente inicia sesión o se registra — mismo patrón que cualquier app del mercado ganadero.');
+    if(clienteState.authMode === 'login'){
+      el.innerHTML = `
+        <div class="auth-screen">
+          <img src="${window.LOGO_NAVY}" class="auth-logo">
+          <div class="auth-sub">Ingresá a tu cuenta</div>
+          <input class="auth-input" placeholder="Correo electrónico" value="ruben.devaglia@mail.com">
+          <input class="auth-input" type="password" placeholder="Contraseña" value="••••••••">
+          <div class="auth-link" style="text-align:right;margin-top:-4px;margin-bottom:14px;">Olvidé mi contraseña</div>
+          <button class="btn btn-primary" style="width:100%;" onclick="window.__lnLogin()">Iniciar sesión</button>
+          <div class="auth-divider">o</div>
+          <button class="btn btn-secondary" style="width:100%;border:1.5px solid var(--navy);" onclick="window.__lnAuthMode('registro')">¿No tenés cuenta? <b>Registrate</b></button>
+        </div>`;
+    } else {
+      el.innerHTML = `
+        <div class="auth-screen">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <span style="cursor:pointer;font-size:16px;" onclick="window.__lnAuthMode('login')">←</span>
+            <div style="font-family:'Manrope';font-weight:700;font-size:15px;color:var(--navy);">Creá tu cuenta</div>
+          </div>
+          <input class="auth-input" placeholder="Ingresá tu nombre" value="Rubén">
+          <input class="auth-input" placeholder="Ingresá tu apellido" value="Devaglia">
+          <input class="auth-input" placeholder="Ingresá tu email">
+          <input class="auth-input" type="password" placeholder="Creá tu contraseña">
+          <input class="auth-input" placeholder="+54 11 2233 4455">
+          <select class="auth-input"><option>Provincia</option><option>Buenos Aires</option></select>
+          <select class="auth-input"><option>Partido</option><option>Azul</option></select>
+          <button class="btn btn-primary" style="width:100%;" onclick="window.__lnLogin()">Registrarse</button>
+        </div>`;
+    }
+    window.__lnAuthMode = function(m){ clienteState.authMode = m; render(); };
+    window.__lnLogin = function(){
+      clienteState.authed = true;
+      document.querySelector('.tabbar').style.display = '';
+      render();
+    };
+  }
+
+  function render(){
+    const el = document.getElementById('cliente-content');
+    if(!clienteState.authed) return renderAuth(el);
+    if(clienteState.tab === 'pedir') return renderPedir(el);
+    if(clienteState.tab === 'viaje') return renderViaje(el);
+    if(clienteState.tab === 'cuenta') return renderCuenta(el);
+  }
+
+  function renderPedir(el){
+    explain('Completá el pedido y tocá "Ver cotización". Los campos son los mismos que pediría el bot de WhatsApp.');
+    const p = clienteState.pedido;
+    el.innerHTML = `
+      <div class="appbar"><div class="appbar-title">Nuevo viaje</div></div>
+      <div class="phone-body">
+        <label class="field-label" style="font-size:10px;">ORIGEN</label>
+        <input id="cf-origen" value="${p.origen}" style="font-size:11.5px;margin-bottom:8px;">
+        <label class="field-label" style="font-size:10px;">DESTINO</label>
+        <input id="cf-destino" value="${p.destino}" style="font-size:11.5px;margin-bottom:8px;">
+        <label class="field-label" style="font-size:10px;">TIPO</label>
+        <select id="cf-tipo" style="font-size:11.5px;margin-bottom:8px;">
+          <option value="hacienda" ${p.tipo==='hacienda'?'selected':''}>🐄 Hacienda</option>
+          <option value="granos" ${p.tipo==='granos'?'selected':''}>🌾 Granos</option>
+        </select>
+        <div style="display:flex;gap:8px;">
+          <div style="flex:1;"><label class="field-label" style="font-size:10px;">CANTIDAD</label><input id="cf-cabezas" type="number" value="${p.cabezas}" style="font-size:11.5px;"></div>
+          <div style="flex:1;"><label class="field-label" style="font-size:10px;">FECHA</label><input id="cf-fecha" type="date" style="font-size:11.5px;"></div>
+        </div>
+        <label class="field-label" style="font-size:10px;margin-top:8px;">KM ESTIMADOS (Google Maps)</label>
+        <input id="cf-km" type="number" value="${p.km}" style="font-size:11.5px;margin-bottom:10px;">
+        <button class="btn btn-primary" style="width:100%;" onclick="window.__lnClienteCotizar()">Ver cotización</button>
+        <div id="cf-quote-area" style="margin-top:12px;"></div>
+      </div>`;
+    window.__lnClienteCotizar = function(){
+      clienteState.pedido.origen = document.getElementById('cf-origen').value;
+      clienteState.pedido.destino = document.getElementById('cf-destino').value;
+      clienteState.pedido.tipo = document.getElementById('cf-tipo').value;
+      clienteState.pedido.cabezas = document.getElementById('cf-cabezas').value;
+      clienteState.pedido.km = parseFloat(document.getElementById('cf-km').value) || 340;
+      clienteState.cotizado = true;
+      clienteState.propuesta = Math.round(calcTarifa()*0.9);
+      renderQuoteArea();
+      explain('Dos caminos posibles, igual que en DiDi: aceptar la tarifa estándar (confirmación inmediata) o proponer tu propio precio (queda sujeto a aprobación). Disponible para cualquier tamaño de cliente.');
+    };
+    if(clienteState.cotizado) renderQuoteArea();
+  }
+
+  function renderQuoteArea(){
+    const area = document.getElementById('cf-quote-area');
+    if(!area) return;
+    const monto = calcTarifa();
+    area.innerHTML = `
+      <div class="card" style="padding:9px 11px;border-color:var(--navy);margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-family:'Manrope';font-weight:700;font-size:11px;">Tarifa estándar</div>
+          <div style="font-family:'JetBrains Mono';font-weight:700;font-size:12px;color:var(--navy);">${money(monto)}</div>
+        </div>
+        <div class="tag green" style="margin-top:5px;font-size:8px;">Confirmación inmediata</div>
+        <div style="font-family:'Inter';font-size:7px;color:var(--gray-500);margin-top:4px;">+ peajes, seguro y lavado. Podés pagar parte con Km LN Plus.</div>
+        <button class="btn btn-primary btn-sm" style="width:100%;margin-top:6px;" onclick="window.__lnAceptarEstandar()">Aceptar esta tarifa</button>
+      </div>
+      <div class="card" style="padding:9px 11px;border-color:var(--gold);background:var(--gold-bg);">
+        <div style="font-family:'Manrope';font-weight:700;font-size:11px;color:var(--gold);">💬 Proponé tu precio</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+          <button class="btn btn-secondary btn-sm" onclick="window.__lnAjustarPropuesta(-50000)">−</button>
+          <div style="flex:1;text-align:center;font-family:'JetBrains Mono';font-weight:700;font-size:12px;" id="cf-propuesta-val">${money(clienteState.propuesta)}</div>
+          <button class="btn btn-secondary btn-sm" onclick="window.__lnAjustarPropuesta(50000)">+</button>
+        </div>
+        <div class="tag gold" style="margin-top:5px;font-size:8px;">Disponible para cualquier cliente · sujeto a aprobación</div>
+        <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:6px;" onclick="window.__lnEnviarPropuestaApp()">Enviar propuesta</button>
+      </div>`;
+    window.__lnAjustarPropuesta = function(delta){
+      clienteState.propuesta = Math.max(0, clienteState.propuesta + delta);
+      document.getElementById('cf-propuesta-val').textContent = money(clienteState.propuesta);
+    };
+    window.__lnAceptarEstandar = function(){
+      clienteState.viajeEstado = 'pedido';
+      explain('Pedido enviado. Mirá la pestaña "Mi viaje" — vas a ver que queda como "Pedido", pendiente de que Nuestro equipo confirme disponibilidad.');
+      lnClienteTab('viaje');
+    };
+    window.__lnEnviarPropuestaApp = function(){
+      explain('Propuesta enviada. Un asesor la revisa y te responde por este mismo canal — no impacta el calendario hasta que se apruebe.');
+      alert('Propuesta de ' + money(clienteState.propuesta) + ' enviada. Sujeta a aprobación de un asesor.');
+    };
+  }
+
+  const ESTADOS = ['pedido','confirmado','asignado','en_ruta','en_carga','entregado'];
+  const ESTADO_LABEL = {pedido:'Pedido', confirmado:'Confirmado', asignado:'Chofer asignado', en_ruta:'En ruta', en_carga:'En carga', entregado:'Entregado'};
+
+  function renderViaje(el){
+    explain('Así ve el cliente el avance del viaje. Usá los botones para simular el paso del tiempo (en la vida real, esto lo dispara Nuestro equipo y el Chofer, no el cliente).');
+    const idx = ESTADOS.indexOf(clienteState.viajeEstado);
+    const p = clienteState.pedido;
+    el.innerHTML = `
+      <div class="appbar"><div class="appbar-title">${p.origen.split(',')[0]} → ${p.destino}</div><div class="appbar-sub">${p.cabezas} ${p.tipo==='granos'?'kg':'cabezas'}</div></div>
+      <div class="phone-body">
+        <div style="display:flex;justify-content:space-between;margin-bottom:14px;">
+          ${ESTADOS.map((s,i)=>`<div style="text-align:center;flex:1;">
+            <div style="width:18px;height:18px;border-radius:50%;margin:0 auto 4px;background:${i<=idx?'var(--navy)':'var(--gray-200)'};"></div>
+            <div style="font-size:6.8px;font-family:'Inter';font-weight:700;color:${i<=idx?'var(--navy)':'var(--gray-400)'};">${ESTADO_LABEL[s]}</div>
+          </div>`).join('')}
+        </div>
+        <div class="card" style="padding:12px;text-align:center;margin-bottom:10px;">
+          <div class="tag ${idx<2?'gold':(idx<5?'navy':'green')}" style="font-size:9px;">${ESTADO_LABEL[clienteState.viajeEstado]}</div>
+          <div style="font-family:'Inter';font-size:10px;color:var(--gray-500);margin-top:6px;">${estadoMensaje(idx)}</div>
+        </div>
+        ${clienteState.viajeEstado==='entregado' ? `
+        <div style="background:var(--navy);border-radius:10px;padding:12px;color:#fff;margin-bottom:10px;">
+          <div style="font-family:'Inter';font-size:9.5px;color:#9DB0CB;">Importe a pagar</div>
+          <div style="font-family:'JetBrains Mono';font-weight:700;font-size:19px;margin-top:2px;">${money(calcTarifa())}</div>
+          <div style="display:flex;gap:6px;margin-top:9px;">
+            <button class="btn btn-sm" style="flex:1;background:rgba(255,255,255,.14);color:#fff;" onclick="alert('Pago simulado — transferencia, Mercado Pago o e-cheque.')">Pagar</button>
+            <button class="btn btn-sm" style="flex:1.3;background:var(--green);color:#fff;" onclick="lnClienteTab('cuenta')">🌟 Pagar con LN Plus</button>
+          </div>
+        </div>` : ''}
+        <button class="btn btn-secondary" style="width:100%;margin-bottom:8px;" ${idx>=ESTADOS.length-1?'disabled':''} onclick="window.__lnAvanzarViaje()">Simular siguiente paso →</button>
+        <button class="btn btn-primary" style="width:100%;display:flex;align-items:center;justify-content:center;gap:6px;" onclick="window.__lnMensajeEmpresa()">💬 Chatea con nosotros</button>
+      </div>`;
+    window.__lnAvanzarViaje = function(){
+      const i = ESTADOS.indexOf(clienteState.viajeEstado);
+      if(i < ESTADOS.length-1){ clienteState.viajeEstado = ESTADOS[i+1]; render(); }
+    };
+    window.__lnMensajeEmpresa = function(){
+      alert('Se abre el chat de WhatsApp con Los Novillos, con el número de este viaje ya cargado.');
+    };
+  }
+  function estadoMensaje(i){
+    return [
+      'Nuestro equipo está validando si hay camión disponible para esa fecha.',
+      'Camión y chofer confirmados — la asignación final se hace 24 hs antes del viaje.',
+      'El chofer confirmó el viaje y está en camino a cargar.',
+      'El viaje está en ruta al destino.',
+      'El camión está cargando la hacienda o los granos en origen.',
+    ][i] || 'Vas a recibir el remito y la factura por este mismo canal.';
+  }
+
+  function renderCuenta(el){
+    explain('Vista estilo fintech: saldo con interés a la vista, LN Plus como el beneficio más visible de la app, viajes facturados y una forma de invitar a otros clientes.');
+    el.innerHTML = `
+      <div class="appbar"><div class="appbar-title">Mi cuenta</div><div class="appbar-sub">Los Novillos</div></div>
+      <div class="phone-body">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#B98A3E,#8C6A2E);display:flex;align-items:center;justify-content:center;font-family:'Manrope';font-weight:800;font-size:12px;color:#fff;flex-shrink:0;">RD</div>
+          <div style="flex:1;"><div style="font-family:'Manrope';font-weight:700;font-size:12.5px;color:var(--navy);">Rubén Devaglia</div><div style="font-family:'Inter';font-size:9px;color:var(--gray-500);">Cliente Los Novillos</div></div>
+        </div>
+        <div class="auth-link" style="text-align:left;margin:0 0 11px;" onclick="alert('Se abriría el formulario para editar tus datos de perfil.')">Editar perfil</div>
+        <div style="background:var(--navy);border-radius:12px;padding:14px;color:#fff;margin-bottom:9px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+            <div><div style="font-family:'Inter';font-size:10px;color:#9DB0CB;">Saldo a pagar</div><div style="font-family:'JetBrains Mono';font-weight:700;font-size:20px;margin-top:3px;">$318.500</div></div>
+            <div style="text-align:right;background:rgba(30,158,99,.22);border-radius:8px;padding:5px 8px;">
+              <div style="font-family:'JetBrains Mono';font-weight:700;font-size:11px;color:#5CD99B;">+${(CONST.TASA_INTERES_ANUAL*100)}% anual</div>
+              <div style="font-family:'Inter';font-size:7.5px;color:#9DB0CB;">interés en cuenta</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:10px;">
+            <button class="btn btn-secondary btn-sm" style="flex:1;background:rgba(255,255,255,.14);color:#fff;" onclick="alert('Pago simulado — el comprobante quedaría asociado al viaje sin planilla.')">Pagar todo</button>
+            <button class="btn btn-secondary btn-sm" style="flex:1;background:rgba(255,255,255,.14);color:#fff;" onclick="alert('Pago parcial simulado.')">Pago parcial</button>
+          </div>
+        </div>
+
+        <div style="background:linear-gradient(135deg,#E7F6EE,#D5F1E3);border:1.5px solid var(--green);border-radius:12px;padding:13px;margin-bottom:9px;box-shadow:0 4px 14px rgba(30,158,99,.15);">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div style="font-family:'Manrope';font-weight:800;font-size:12px;color:var(--green);">🌟 LN PLUS</div>
+            <div class="tag green" style="font-size:8px;">Tu beneficio</div>
+          </div>
+          <div style="display:flex;gap:14px;margin-top:8px;">
+            <div><div style="font-family:'JetBrains Mono';font-weight:700;font-size:16px;color:var(--navy);">1.240 km</div><div style="font-family:'Inter';font-size:7.5px;color:var(--gray-600);">hacienda</div></div>
+            <div><div style="font-family:'JetBrains Mono';font-weight:700;font-size:16px;color:var(--navy);">0 km</div><div style="font-family:'Inter';font-size:7.5px;color:var(--gray-600);">granos</div></div>
+          </div>
+          <button class="btn" style="width:100%;margin-top:9px;background:var(--green);color:#fff;" onclick="window.__lnPagarConKmPlus()">Pagar este viaje con LN Plus</button>
+        </div>
+
+        <div style="font-family:'Inter';font-size:9.5px;font-weight:700;color:var(--gray-500);margin-bottom:5px;">VIAJES FACTURADOS</div>
+        <div class="card" style="padding:8px 10px;display:flex;justify-content:space-between;margin-bottom:6px;">
+          <div><div style="font-family:'Inter';font-weight:700;font-size:10.5px;">Azul → Cañuelas</div><div style="font-family:'Inter';font-size:8.5px;color:var(--gray-500);">Factura A-004821</div></div>
+          <div style="font-family:'JetBrains Mono';font-weight:700;font-size:11px;">$196.200</div>
+        </div>
+        <div class="card" style="padding:8px 10px;display:flex;justify-content:space-between;margin-bottom:9px;">
+          <div><div style="font-family:'Inter';font-weight:700;font-size:10.5px;">Tandil → CABA</div><div style="font-family:'Inter';font-size:8.5px;color:var(--gray-500);">Factura A-004798</div></div>
+          <div style="font-family:'JetBrains Mono';font-weight:700;font-size:11px;">$122.300</div>
+        </div>
+
+        <div style="background:var(--gold-bg);border:1px dashed var(--gold);border-radius:10px;padding:11px;text-align:center;">
+          <div style="font-family:'Manrope';font-weight:700;font-size:11.5px;color:var(--gold);">🎁 Compartí y gana millas</div>
+          <div style="font-family:'Inter';font-size:9px;color:var(--gray-600);margin-top:4px;line-height:1.4;">Invitá a otro productor y cuando hace su primer viaje, ganás kilometraje en LN Plus.</div>
+          <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:8px;" onclick="window.__lnCompartirApp()">Compartir mi link</button>
+        </div>
+      </div>`;
+    window.__lnPagarConKmPlus = function(){
+      alert('Se aplica hasta el ' + (CONST.MAX_PORC_VIAJE_CON_KM_PLUS*100) + '% del viaje pagado con LN Plus — el resto se cobra normalmente.');
+    };
+    window.__lnCompartirApp = function(){
+      alert('Se abre el selector para compartir tu link de invitación por WhatsApp, mail o copiar enlace.');
+    };
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>

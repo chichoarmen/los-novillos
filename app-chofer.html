@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Los Novillos — App Chofer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="design-system.css">
+</head>
+<body>
+<div id="app-root">
+  <div id="chofer-content" style="flex:1;display:flex;flex-direction:column;overflow:hidden;"></div>
+  <div class="tabbar">
+    <button class="tabitem active" id="chtab-viajes" onclick="lnChoferTab('viajes')"><div class="ic"></div>Mis viajes</button>
+    <button class="tabitem" id="chtab-perfil" onclick="lnChoferTab('perfil')"><div class="ic"></div>Perfil</button>
+  </div>
+</div>
+
+<script>
+const CONST = {
+  TARIFA_KM_JAULA_SIMPLE: 4100, TARIFA_KM_BITREN: 6000, PORCENTAJE_KM_PLUS: 0.05,
+  MIN_KM_PLUS_CANJE: 500, MIN_KM_PLUS_POR_OPERACION: 100, MAX_PORC_VIAJE_CON_KM_PLUS: 0.30,
+  TASA_INTERES_ANUAL: 0.15, DIAS_ASIGNACION_CHOFER: 1, DIAS_ALERTA_VENCIMIENTO: 15,
+};
+function money(n){ return '$' + Math.round(n).toLocaleString('es-AR'); }
+window.LOGO_WHITE = 'logo-white.png';
+window.LOGO_NAVY = 'logo-navy.png';
+</script>
+<script>
+(function(){
+  
+  const VIAJES_CHOFER = [
+    {id:1, ruta:'Azul → Cañuelas', detalle:'62 cabezas · mañana 08:00', estado:'asignado', tipo:'hacienda', km_est:340},
+    {id:2, ruta:'Tandil → CABA', detalle:'18.400 kg granos · hoy', estado:'en_ruta', tipo:'granos', km_est:310},
+    {id:3, ruta:'Bolívar → Quequén', detalle:'80 cabezas · 04/08', estado:'entregado', tipo:'hacienda', km_est:210},
+    {id:4, ruta:'9 de Julio → Rosario', detalle:'18.000 kg granos · 01/08', estado:'entregado', tipo:'granos', km_est:290},
+  ];
+  let choferState = { tab:'viajes', authed:false, authMode:'login', viajeAbierto:null, paso:'confirmar', gastos:[], kmReal:'', firmaReceptor:false, firmaChofer:false, estadoHacienda:'bueno' };
+
+  function explain(t){ const el = document.getElementById('chofer-explainer'); if(el) el.textContent = t; }
+
+  window.lnChoferTab = function(tab){
+    choferState.tab = tab; choferState.viajeAbierto = null;
+    ['viajes','perfil'].forEach(t=> document.getElementById('chtab-'+t).classList.toggle('active', t===tab));
+    render();
+  };
+
+  function renderAuth(el){
+    document.querySelector('.tabbar').style.display = 'none';
+    explain('El chofer también inicia sesión antes de ver sus viajes — cuenta creada por Los Novillos, con su documentación ya cargada.');
+    if(choferState.authMode === 'login'){
+      el.innerHTML = `
+        <div class="auth-screen">
+          <img src="${window.LOGO_NAVY}" class="auth-logo">
+          <div class="auth-sub">App del Chofer · Ingresá a tu cuenta</div>
+          <input class="auth-input" placeholder="Correo electrónico" value="ever.lopez@mail.com">
+          <input class="auth-input" type="password" placeholder="Contraseña" value="••••••••">
+          <div class="auth-link" style="text-align:right;margin-top:-4px;margin-bottom:14px;">Olvidé mi contraseña</div>
+          <button class="btn btn-primary" style="width:100%;" onclick="window.__lnChoferLogin()">Iniciar sesión</button>
+          <div class="auth-divider">o</div>
+          <button class="btn btn-secondary" style="width:100%;border:1.5px solid var(--navy);" onclick="window.__lnChoferAuthMode('registro')">¿No tenés cuenta? <b>Registrate</b></button>
+        </div>`;
+    } else {
+      el.innerHTML = `
+        <div class="auth-screen">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <span style="cursor:pointer;font-size:16px;" onclick="window.__lnChoferAuthMode('login')">←</span>
+            <div style="font-family:'Manrope';font-weight:700;font-size:15px;color:var(--navy);">Creá tu cuenta de chofer</div>
+          </div>
+          <input class="auth-input" placeholder="Ingresá tu nombre" value="Ever">
+          <input class="auth-input" placeholder="Ingresá tu apellido" value="López">
+          <input class="auth-input" placeholder="Ingresá tu email">
+          <input class="auth-input" type="password" placeholder="Creá tu contraseña">
+          <input class="auth-input" placeholder="+54 11 2233 4455">
+          <input class="auth-input" placeholder="N.º de licencia de conducir">
+          <button class="btn btn-primary" style="width:100%;" onclick="window.__lnChoferLogin()">Registrarse</button>
+        </div>`;
+    }
+    window.__lnChoferAuthMode = function(m){ choferState.authMode = m; render(); };
+    window.__lnChoferLogin = function(){
+      choferState.authed = true;
+      document.querySelector('.tabbar').style.display = '';
+      render();
+    };
+  }
+
+  function render(){
+    const el = document.getElementById('chofer-content');
+    if(!choferState.authed) return renderAuth(el);
+    if(choferState.tab === 'perfil') return renderPerfil(el);
+    if(choferState.viajeAbierto) return renderDetalle(el);
+    return renderLista(el);
+  }
+
+  function renderLista(el){
+    explain('Los viajes ya asignados por Nuestro equipo (24 hs antes) le llegan al chofer con todo pre-cargado. Los activos y los ya terminados se ven por separado.');
+    const activos = VIAJES_CHOFER.filter(v=>v.estado!=='entregado');
+    const historicos = VIAJES_CHOFER.filter(v=>v.estado==='entregado');
+    const card = v => `
+          <div class="card" style="padding:11px 12px;margin-bottom:8px;cursor:pointer;" onclick="window.__lnAbrirViaje(${v.id})">
+            <div class="tag ${v.estado==='asignado'?'navy':(v.estado==='entregado'?'gray':'green')}" style="font-size:9px;">${v.estado==='asignado'?'Asignado':(v.estado==='entregado'?'Entregado':'En curso')}</div>
+            <div style="font-family:'Manrope';font-weight:700;font-size:12px;margin-top:6px;">${v.ruta}</div>
+            <div style="font-family:'Inter';font-size:9.5px;color:var(--gray-500);margin-top:2px;">${v.detalle}</div>
+          </div>`;
+    el.innerHTML = `
+      <div class="appbar"><div class="appbar-title">Mis viajes</div></div>
+      <div class="phone-body">
+        <div style="font-family:'Inter';font-size:9.5px;font-weight:700;color:var(--gray-500);margin-bottom:6px;">ACTIVOS</div>
+        ${activos.map(card).join('') || '<div style="font-size:10px;color:var(--gray-400);margin-bottom:10px;">Sin viajes activos.</div>'}
+        <div style="font-family:'Inter';font-size:9.5px;font-weight:700;color:var(--gray-500);margin:10px 0 6px;">HISTÓRICO</div>
+        ${historicos.map(card).join('')}
+      </div>`;
+    window.__lnAbrirViaje = function(id){
+      choferState.viajeAbierto = VIAJES_CHOFER.find(v=>v.id===id);
+      choferState.paso = choferState.viajeAbierto.estado === 'en_ruta' ? 'ruta' : (choferState.viajeAbierto.estado === 'entregado' ? 'entregado' : 'confirmar');
+      choferState.gastos = []; choferState.kmReal=''; choferState.firmaReceptor=false; choferState.firmaChofer=false;
+      render();
+    };
+  }
+
+  function renderDetalle(el){
+    const v = choferState.viajeAbierto;
+    const back = `<div style="font-family:'Inter';font-size:10px;color:var(--navy);cursor:pointer;" onclick="window.__lnVolverLista()">← Mis viajes</div>`;
+    window.__lnVolverLista = function(){ choferState.viajeAbierto = null; render(); };
+
+    if(choferState.paso === 'confirmar'){
+      explain('"Confirmar viaje" en vez de "Aceptar" — confirmarlo no es opcional para el chofer.');
+      el.innerHTML = `<div class="appbar">${back}<div class="appbar-title" style="margin-top:4px;">${v.ruta}</div></div>
+        <div class="phone-body">
+          <div class="card" style="padding:11px 12px;">
+            <div class="tag navy" style="font-size:9px;">Asignado</div>
+            <div style="font-family:'Inter';font-size:11px;margin-top:6px;">${v.detalle}</div>
+            <button class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="window.__lnConfirmarViaje()">Confirmar viaje</button>
+          </div>
+        </div>`;
+      window.__lnConfirmarViaje = function(){ choferState.paso = 'carga'; render(); };
+      return;
+    }
+    if(choferState.paso === 'carga'){
+      explain('Estado de la hacienda y foto de guía SENASA al cargar. La guía la completa el encargado de campo — el chofer solo verifica que esté. No hay firma en este paso.');
+      el.innerHTML = `<div class="appbar">${back}<div class="appbar-title" style="margin-top:4px;">Carga en origen</div></div>
+        <div class="phone-body">
+          <label class="field-label" style="font-size:10px;">ESTADO DE LA HACIENDA</label>
+          <div style="display:flex;gap:4px;margin-bottom:8px;">
+            ${['bueno','regular','malo'].map(e=>`<button class="btn btn-sm" style="flex:1;background:${choferState.estadoHacienda===e?'var(--navy)':'var(--gray-100)'};color:${choferState.estadoHacienda===e?'#fff':'var(--gray-700)'};" onclick="window.__lnSetEstado('${e}')">${e}</button>`).join('')}
+          </div>
+          <label class="field-label" style="font-size:10px;">GUÍA SENASA / REMITENTE</label>
+          <div class="card" style="padding:8px 10px;font-size:9.5px;color:var(--gray-600);margin-bottom:6px;">Carga el encargado de campo · el chofer verifica</div>
+          <div style="border:1.5px dashed var(--gray-300);border-radius:6px;padding:8px;text-align:center;font-size:9.5px;color:var(--gray-500);margin-bottom:10px;" onclick="alert('Foto de guía adjuntada (simulado)')">+ Foto de la guía</div>
+          <button class="btn btn-primary" style="width:100%;" onclick="window.__lnIrRuta()">Continuar</button>
+        </div>`;
+      window.__lnSetEstado = function(e){ choferState.estadoHacienda = e; render(); };
+      window.__lnIrRuta = function(){ choferState.paso = 'ruta'; render(); };
+      return;
+    }
+    if(choferState.paso === 'ruta'){
+      explain('En ruta: combustible y peajes no se cargan acá (van por YPF / TelePase). Cada gasto lleva nombre, importe y foto del ticket.');
+      el.innerHTML = `<div class="appbar">${back}<div class="appbar-title" style="margin-top:4px;">En ruta</div></div>
+        <div class="phone-body">
+          <div style="background:var(--green);border-radius:8px;padding:9px;text-align:center;font-family:'Manrope';font-weight:700;color:#fff;font-size:11px;margin-bottom:10px;">Viaje iniciado ▶</div>
+          <label class="field-label" style="font-size:10px;">GASTOS (lavado, gomería, extraordinario)</label>
+          <div id="gastos-list">${choferState.gastos.map(g=>`<div class="card" style="padding:7px 9px;font-size:10px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center;"><span>${g.foto?'📎 ':''}${g.label}</span><b>${money(g.monto)}</b></div>`).join('')}</div>
+          <div id="gasto-form-area"></div>
+          <button class="btn btn-secondary" style="width:100%;margin-bottom:10px;" onclick="window.__lnMostrarFormGasto()">+ Cargar gasto</button>
+          <button class="btn btn-primary" style="width:100%;" onclick="window.__lnFinalizarPaso()">Ir a finalizar viaje</button>
+        </div>`;
+      window.__lnMostrarFormGasto = function(){
+        document.getElementById('gasto-form-area').innerHTML = `
+          <div class="card" style="padding:9px;margin-bottom:10px;">
+            <label class="field-label" style="font-size:9px;">NOMBRE DEL GASTO</label>
+            <input id="g-nombre" placeholder="ej: Lavado del camión" style="font-size:10.5px;margin-bottom:6px;">
+            <label class="field-label" style="font-size:9px;">IMPORTE</label>
+            <input id="g-importe" type="number" placeholder="$" style="font-size:10.5px;margin-bottom:6px;">
+            <label class="field-label" style="font-size:9px;">FOTO DEL TICKET</label>
+            <div id="g-foto-btn" style="border:1.5px dashed var(--gray-300);border-radius:6px;padding:8px;text-align:center;font-size:9.5px;color:var(--gray-500);margin-bottom:8px;cursor:pointer;" onclick="window.__lnFotoTicket()">📷 Tomar foto</div>
+            <button class="btn btn-primary btn-sm" style="width:100%;" onclick="window.__lnGuardarGasto()">Guardar gasto</button>
+          </div>`;
+        window.__gastoFotoOk = false;
+        window.__lnFotoTicket = function(){
+          window.__gastoFotoOk = true;
+          document.getElementById('g-foto-btn').innerHTML = '✅ Foto adjuntada';
+          document.getElementById('g-foto-btn').style.color = 'var(--green)';
+        };
+        window.__lnGuardarGasto = function(){
+          const nombre = document.getElementById('g-nombre').value || 'Gasto';
+          const importe = parseFloat(document.getElementById('g-importe').value) || 0;
+          choferState.gastos.push({label: nombre, monto: importe, foto: window.__gastoFotoOk});
+          render();
+        };
+      };
+      window.__lnFinalizarPaso = function(){ choferState.paso = 'finalizar'; render(); };
+      return;
+    }
+    if(choferState.paso === 'finalizar'){
+      explain('Km reales del odómetro + firma del receptor + firma del chofer, ambas dibujadas de verdad — las dos firmas del viaje entero pasan acá, al finalizar.');
+      el.innerHTML = `<div class="appbar">${back}<div class="appbar-title" style="margin-top:4px;">Finalizar viaje</div></div>
+        <div class="phone-body">
+          <label class="field-label" style="font-size:10px;">KM REALES DEL VIAJE</label>
+          <input id="ch-km" type="number" placeholder="ej: 352" value="${choferState.kmReal}" style="font-size:11px;margin-bottom:10px;">
+          <label class="field-label" style="font-size:10px;">FIRMA DEL RECEPTOR</label>
+          <div class="sig-canvas-wrap" style="height:70px;margin-bottom:4px;"><canvas id="sig-receptor" height="70"></canvas><button class="sig-clear" onclick="window.__lnLimpiarFirma('receptor')">borrar</button></div>
+          <div style="font-size:8.5px;color:${choferState.firmaReceptor?'var(--green)':'var(--gray-400)'};margin-bottom:8px;">${choferState.firmaReceptor?'✓ Firmado':'Dibujá la firma arriba'}</div>
+          <label class="field-label" style="font-size:10px;">FIRMA DEL CHOFER</label>
+          <div class="sig-canvas-wrap" style="height:70px;margin-bottom:4px;"><canvas id="sig-chofer" height="70"></canvas><button class="sig-clear" onclick="window.__lnLimpiarFirma('chofer')">borrar</button></div>
+          <div style="font-size:8.5px;color:${choferState.firmaChofer?'var(--green)':'var(--gray-400)'};margin-bottom:10px;">${choferState.firmaChofer?'✓ Firmado':'Dibujá la firma arriba'}</div>
+          <button class="btn btn-primary" style="width:100%;" onclick="window.__lnConfirmarEntrega()">Confirmar entrega</button>
+        </div>`;
+      window.__lnSigCanvases = window.__lnSigCanvases || {};
+      ['receptor','chofer'].forEach(who=>{
+        const canvas = document.getElementById('sig-'+who);
+        const ctx = canvas.getContext('2d');
+        const resize = ()=>{ canvas.width = canvas.clientWidth; canvas.height = 70; };
+        resize();
+        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--navy') || '#0F2542';
+        ctx.lineWidth = 2; ctx.lineCap = 'round';
+        let drawing = false;
+        function pos(e){ const r = canvas.getBoundingClientRect(); const p = e.touches ? e.touches[0] : e; return {x:p.clientX-r.left, y:p.clientY-r.top}; }
+        function start(e){ drawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); e.preventDefault(); }
+        function move(e){ if(!drawing) return; const p = pos(e); ctx.lineTo(p.x,p.y); ctx.stroke();
+          if(who==='receptor') choferState.firmaReceptor = true; else choferState.firmaChofer = true;
+          const label = document.querySelector('#sig-'+who).parentElement.nextElementSibling;
+          if(label){ label.textContent = '✓ Firmado'; label.style.color = 'var(--green)'; }
+          e.preventDefault();
+        }
+        function end(){ drawing = false; }
+        canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', move); window.addEventListener('mouseup', end);
+        canvas.addEventListener('touchstart', start); canvas.addEventListener('touchmove', move); canvas.addEventListener('touchend', end);
+      });
+      window.__lnLimpiarFirma = function(who){
+        const canvas = document.getElementById('sig-'+who);
+        canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
+        if(who==='receptor') choferState.firmaReceptor = false; else choferState.firmaChofer = false;
+        render();
+      };
+      window.__lnConfirmarEntrega = function(){
+        choferState.kmReal = document.getElementById('ch-km').value || 352;
+        if(!choferState.firmaReceptor || !choferState.firmaChofer){ alert('Faltan firmas — dibujá ambas antes de confirmar.'); return; }
+        choferState.paso = 'entregado';
+        render();
+      };
+      return;
+    }
+    if(choferState.paso === 'entregado'){
+      const tarifa = v.tipo==='granos'?CONST.TARIFA_KM_BITREN:CONST.TARIFA_KM_JAULA_SIMPLE;
+      const montoFinal = tarifa * (parseFloat(choferState.kmReal)||v.km_est);
+      explain('Al finalizar se genera el remito automáticamente (estado de hacienda, guía, km real, ambas firmas) y se ajusta el monto final por el kilometraje real.');
+      el.innerHTML = `<div class="appbar">${back}<div class="appbar-title" style="margin-top:4px;">Remito generado</div></div>
+        <div class="phone-body">
+          <div class="card" style="padding:12px;">
+            <div class="tag green" style="font-size:9px;">Entregado</div>
+            <div style="font-family:'Inter';font-size:10.5px;margin-top:8px;line-height:1.6;">
+              Estado hacienda: <b>${choferState.estadoHacienda}</b><br>
+              Km real: <b>${choferState.kmReal||v.km_est}</b><br>
+              Monto ajustado: <b>${money(montoFinal)}</b><br>
+              Firmas: <b>receptor ✓ / chofer ✓</b>
+            </div>
+          </div>
+          <div style="font-family:'Inter';font-size:9.5px;color:var(--gray-500);margin-top:8px;">PDF enviado por WhatsApp y por la App al cliente.</div>
+        </div>`;
+    }
+  }
+
+  function renderPerfil(el){
+    explain('Perfil del chofer: viáticos, historial, documentos con vencimiento (bloquean asignación si vencen) y reporte de siniestros.');
+    el.innerHTML = `
+      <div class="appbar"><div class="appbar-title">Mi perfil</div></div>
+      <div class="phone-body">
+        <div style="background:var(--navy);border-radius:10px;padding:11px;color:#fff;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#3A5279,#17335C);display:flex;align-items:center;justify-content:center;font-family:'Manrope';font-weight:800;font-size:13px;flex-shrink:0;border:2px solid rgba(255,255,255,.25);">EL</div>
+            <div style="flex:1;">
+              <div style="font-family:'Manrope';font-weight:700;font-size:12px;">Ever López</div>
+              <div style="font-family:'Inter';font-size:8.5px;color:#9DB0CB;">Chofer · Los Novillos</div>
+            </div>
+            <div style="text-align:right;"><div style="font-family:'JetBrains Mono';font-weight:700;font-size:13px;">$132.400</div><div style="font-family:'Inter';font-size:7.5px;color:#9DB0CB;">viáticos</div></div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+          <div class="card" style="padding:8px;text-align:center;"><div style="font-family:'JetBrains Mono';font-weight:700;font-size:13px;">318</div><div style="font-size:8px;color:var(--gray-500);">viajes</div></div>
+          <div class="card" style="padding:8px;text-align:center;"><div style="font-family:'JetBrains Mono';font-weight:700;font-size:13px;color:var(--gold);">4,7★</div><div style="font-size:8px;color:var(--gray-500);">puntaje</div></div>
+        </div>
+        <div style="font-family:'Inter';font-size:9px;font-weight:700;color:var(--gray-500);margin-bottom:5px;">DOCUMENTACIÓN</div>
+        <div class="card" style="padding:7px 9px;display:flex;justify-content:space-between;margin-bottom:4px;"><span style="font-size:9.5px;">Licencia</span><span class="tag green" style="font-size:8px;">Vigente</span></div>
+        <div class="card" style="padding:7px 9px;display:flex;justify-content:space-between;margin-bottom:4px;"><span style="font-size:9.5px;">ART</span><span class="tag green" style="font-size:8px;">Vigente</span></div>
+        <div class="card" style="padding:7px 9px;display:flex;justify-content:space-between;margin-bottom:8px;"><span style="font-size:9.5px;">VTV camión</span><span class="tag red" style="font-size:8px;">Vencida</span></div>
+        <div style="font-family:'Inter';font-size:8.5px;color:var(--red);margin-bottom:10px;">⚠ Con la VTV vencida, este chofer no aparecería para asignar un viaje nuevo.</div>
+        <button class="btn btn-secondary" style="width:100%;" onclick="window.__lnReportarSiniestro()">🚨 Reportar siniestro</button>
+        <div id="siniestro-area"></div>
+      </div>`;
+    window.__lnReportarSiniestro = function(){
+      document.getElementById('siniestro-area').innerHTML = `
+        <div class="card" style="padding:9px;margin-top:8px;">
+          <label class="field-label" style="font-size:9px;">DESCRIPCIÓN BREVE</label>
+          <textarea id="sin-desc" rows="2" style="font-size:10px;margin-bottom:6px;">Choque leve, sin heridos</textarea>
+          <button class="btn btn-primary btn-sm" style="width:100%;" onclick="window.__lnEnviarSiniestro()">Enviar a Ofelia</button>
+        </div>`;
+      window.__lnEnviarSiniestro = function(){
+        alert('Siniestro informado. Ofelia recibe la alerta con estos datos y arma la denuncia — el chofer no gestiona el seguro.');
+      };
+    };
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>

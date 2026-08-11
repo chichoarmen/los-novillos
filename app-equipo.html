@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Los Novillos — App Nuestro Equipo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="design-system.css">
+</head>
+<body>
+<div id="app-root">
+  <div id="equipo-content" style="flex:1;display:flex;flex-direction:column;overflow:hidden;"></div>
+  <div class="tabbar">
+    <button class="tabitem active" id="eqtab-pedidos" onclick="window.__lnEquipoTab('pedidos')"><div class="ic"></div>Pedidos</button>
+    <button class="tabitem" id="eqtab-flota" onclick="window.__lnEquipoTab('flota')"><div class="ic"></div>Flota</button>
+    <button class="tabitem" id="eqtab-fin" onclick="window.__lnEquipoTab('fin')"><div class="ic"></div>Financiero</button>
+    <button class="tabitem" id="eqtab-ejec" onclick="window.__lnEquipoTab('ejec')"><div class="ic"></div>Ejecutivo</button>
+  </div>
+</div>
+
+<script>
+const CONST = {
+  TARIFA_KM_JAULA_SIMPLE: 4100, TARIFA_KM_BITREN: 6000, PORCENTAJE_KM_PLUS: 0.05,
+  MIN_KM_PLUS_CANJE: 500, MIN_KM_PLUS_POR_OPERACION: 100, MAX_PORC_VIAJE_CON_KM_PLUS: 0.30,
+  TASA_INTERES_ANUAL: 0.15, DIAS_ASIGNACION_CHOFER: 1, DIAS_ALERTA_VENCIMIENTO: 15,
+};
+function money(n){ return '$' + Math.round(n).toLocaleString('es-AR'); }
+window.LOGO_WHITE = 'logo-white.png';
+window.LOGO_NAVY = 'logo-navy.png';
+</script>
+<script>
+(function(){
+  let equipoTab = 'pedidos';
+  let equipoAuthed = false;
+  let equipoAuthMode = 'login';
+
+  function explain(t){ const el = document.getElementById('equipo-explainer'); if(el) el.textContent = t; }
+
+  window.__lnEquipoTab = function(t){
+    equipoTab = t;
+    ['pedidos','flota','fin','ejec'].forEach(k=>{
+      document.getElementById('eqtab-'+k).classList.toggle('active', t===k);
+    });
+    renderEquipo();
+  };
+
+  function renderAuth(el){
+    document.querySelector('.tabbar').style.display = 'none';
+    explain('El equipo también entra por una app propia, con su cuenta interna — mismo patrón que Cliente y Chofer.');
+    if(equipoAuthMode === 'login'){
+      el.innerHTML = `
+        <div class="auth-screen">
+          <img src="${window.LOGO_NAVY}" class="auth-logo">
+          <div class="auth-sub">App de Nuestro equipo · Ingresá a tu cuenta</div>
+          <input class="auth-input" placeholder="Correo electrónico" value="equipo@losnovillos.com.ar">
+          <input class="auth-input" type="password" placeholder="Contraseña" value="••••••••">
+          <div class="auth-link" style="text-align:right;margin-top:-4px;margin-bottom:14px;">Olvidé mi contraseña</div>
+          <button class="btn btn-primary" style="width:100%;" onclick="window.__lnEquipoLogin()">Iniciar sesión</button>
+          <div class="auth-divider">o</div>
+          <button class="btn btn-secondary" style="width:100%;border:1.5px solid var(--navy);" onclick="window.__lnEquipoAuthMode('registro')">¿No tenés cuenta? <b>Registrate</b></button>
+        </div>`;
+    } else {
+      el.innerHTML = `
+        <div class="auth-screen">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <span style="cursor:pointer;font-size:16px;" onclick="window.__lnEquipoAuthMode('login')">←</span>
+            <div style="font-family:'Manrope';font-weight:700;font-size:15px;color:var(--navy);">Alta de usuario interno</div>
+          </div>
+          <input class="auth-input" placeholder="Nombre">
+          <input class="auth-input" placeholder="Apellido">
+          <input class="auth-input" placeholder="Email @losnovillos.com.ar">
+          <input class="auth-input" type="password" placeholder="Contraseña">
+          <select class="auth-input"><option>Área: Coordinación</option><option>Área: Administración</option><option>Área: Dirección</option></select>
+          <button class="btn btn-primary" style="width:100%;margin-top:4px;" onclick="window.__lnEquipoLogin()">Registrarse</button>
+        </div>`;
+    }
+    window.__lnEquipoAuthMode = function(m){ equipoAuthMode = m; renderAuth(document.getElementById('equipo-content')); };
+    window.__lnEquipoLogin = function(){
+      equipoAuthed = true;
+      document.querySelector('.tabbar').style.display = '';
+      renderEquipo();
+    };
+  }
+
+  // ---------------- datos de pedidos (incluye WhatsApp + negociaciones) ----------------
+  const CHOFERES = [
+    {id:1, nombre:'Ever López', camion:'ABC 123', habilitado:false, motivo:'VTV vencida'},
+    {id:2, nombre:'L. Fernández', camion:'AD 714 AP', habilitado:true},
+    {id:3, nombre:'M. Suárez', camion:'AE 217 TS', habilitado:true},
+    {id:4, nombre:'O. Ibarra', camion:'AF 020 PN', habilitado:false, motivo:'ART vencido'},
+  ];
+  let PEDIDOS = [
+    {id:105, cliente:'Corredor Rural SRL', canal:'WhatsApp', origen:'Pila', destino:'Chascomús', tipo:'hacienda', cabezas:40, km:120, fecha:'2026-08-10', estado:'negociando', propuesta:380000},
+    {id:106, cliente:'Frigorífico Quequén', canal:'App', origen:'Necochea', destino:'Quequén', tipo:'hacienda', cabezas:70, km:45, fecha:'2026-08-09', estado:'negociando', propuesta:150000},
+    {id:101, cliente:'Frigorífico Cañuelas', canal:'WhatsApp', origen:'Azul', destino:'Cañuelas', tipo:'hacienda', cabezas:62, km:340, fecha:'2026-08-08', estado:'aceptado', chofer:null},
+    {id:102, cliente:'Acopio 9 de Julio', canal:'App', origen:'9 de Julio', destino:'Rosario', tipo:'granos', cabezas:'18.400 kg', km:290, fecha:'2026-08-08', estado:'confirmado', chofer:null},
+    {id:103, cliente:'Estancia Bolívar', canal:'App', origen:'Bolívar', destino:'Quequén', tipo:'hacienda', cabezas:80, km:210, fecha:'2026-08-09', estado:'asignado', chofer:'L. Fernández'},
+    {id:104, cliente:'Swift', canal:'WhatsApp', origen:'Tandil', destino:'CABA', tipo:'hacienda', cabezas:55, km:352, fecha:'2026-08-07', estado:'en_ruta', chofer:'M. Suárez'},
+  ];
+  const ESTADO_LABEL = {negociando:'Negociando precio', aceptado:'Aceptado por cliente', confirmado:'Confirmado', asignado:'Asignado', en_ruta:'En ruta', entregado:'Entregado'};
+  const ESTADO_TAG = {negociando:'orange', aceptado:'gold', confirmado:'navy', asignado:'navy', en_ruta:'green', entregado:'gray'};
+  let selectedId = null;
+
+  function renderPedidos(el){
+    explain('Acá entran los pedidos de WhatsApp y de la App, incluidas las propuestas de precio que todavía se están negociando. Tocá uno para ver el detalle.');
+    if(selectedId){
+      const p = PEDIDOS.find(x=>x.id===selectedId);
+      if(p) return renderDetalle(el, p);
+    }
+    el.innerHTML = `
+      <div class="appbar"><div class="appbar-title">Pedidos</div><div class="appbar-sub">${PEDIDOS.length} en curso</div></div>
+      <div class="phone-body">
+        ${PEDIDOS.map(p=>`
+          <div class="card" style="padding:10px 11px;margin-bottom:8px;cursor:pointer;" onclick="window.__lnAbrirPedido(${p.id})">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="tag ${p.canal==='WhatsApp'?'green':'navy'}" style="font-size:8.5px;">${p.canal}</span>
+              <span class="tag ${ESTADO_TAG[p.estado]}" style="font-size:8.5px;">${ESTADO_LABEL[p.estado]}</span>
+            </div>
+            <div style="font-family:'Manrope';font-weight:700;font-size:11.5px;margin-top:6px;">${p.cliente}</div>
+            <div style="font-family:'Inter';font-size:9.5px;color:var(--gray-500);margin-top:2px;">${p.origen} → ${p.destino} · ${p.fecha}</div>
+          </div>`).join('')}
+      </div>`;
+    window.__lnAbrirPedido = function(id){ selectedId = id; renderEquipo(); };
+  }
+
+  function renderDetalle(el, p){
+    const tarifa = p.tipo==='granos'?CONST.TARIFA_KM_BITREN:CONST.TARIFA_KM_JAULA_SIMPLE;
+    const monto = tarifa*p.km;
+    let actionsHtml = '';
+    if(p.estado === 'negociando'){
+      actionsHtml = `
+        <div class="card" style="padding:9px 10px;margin-top:10px;background:var(--orange-bg);border-color:var(--orange);">
+          <div class="tag orange" style="font-size:8.5px;">Propuesta del cliente</div>
+          <div style="font-family:'JetBrains Mono';font-weight:700;font-size:14px;color:var(--navy);margin-top:5px;">${money(p.propuesta)}</div>
+          <div style="font-family:'Inter';font-size:9.5px;color:var(--gray-600);margin-top:2px;">vs. tarifa estándar ${money(monto)}</div>
+        </div>
+        <button class="btn btn-primary btn-sm" style="width:100%;margin-top:9px;" onclick="window.__lnAprobarPropuesta(${p.id})">Aprobar propuesta</button>
+        <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:7px;" onclick="window.__lnRechazarPropuesta(${p.id})">Ofrecer tarifa estándar</button>`;
+    } else if(p.estado === 'aceptado'){
+      actionsHtml = `<button class="btn btn-primary btn-sm" style="width:100%;margin-top:12px;" onclick="window.__lnConfirmarPedido(${p.id})">Confirmar disponibilidad</button>
+        <div style="font-family:'Inter';font-size:9.5px;color:var(--gray-500);margin-top:6px;">Estamos validando si hay camión disponible para el ${p.fecha}.</div>`;
+    } else if(p.estado === 'confirmado'){
+      const disponibles = CHOFERES.filter(c=>c.habilitado);
+      const filtrados = CHOFERES.filter(c=>!c.habilitado);
+      actionsHtml = `
+        <label class="field-label" style="margin-top:10px;font-size:9.5px;">Asignar chofer (24 hs antes)</label>
+        <select id="coord-chofer-select" style="font-size:10.5px;">
+          ${disponibles.map(c=>`<option value="${c.nombre}">${c.nombre} · ${c.camion}</option>`).join('')}
+        </select>
+        <div style="font-family:'Inter';font-size:9px;color:var(--gray-500);margin-top:6px;">No aparecen: ${filtrados.map(c=>`${c.nombre} (${c.motivo})`).join(', ')}.</div>
+        <button class="btn btn-primary btn-sm" style="width:100%;margin-top:8px;" onclick="window.__lnAsignarChofer(${p.id})">Asignar</button>`;
+    } else if(p.estado === 'asignado'){
+      actionsHtml = `<div class="tag navy" style="margin-top:10px;font-size:9px;">Chofer: ${p.chofer}</div><div style="font-family:'Inter';font-size:9.5px;color:var(--gray-500);margin-top:6px;">Esperando que el chofer confirme e inicie el viaje.</div>`;
+    } else {
+      actionsHtml = `<div style="font-family:'Inter';font-size:9.5px;color:var(--gray-500);margin-top:10px;">Viaje en curso o finalizado — sin acciones pendientes.</div>`;
+    }
+    el.innerHTML = `
+      <div class="appbar"><span style="cursor:pointer;font-size:13px;" onclick="window.__lnCerrarDetalle()">←</span><div class="appbar-title" style="font-size:13px;">Pedido #${p.id}</div></div>
+      <div class="phone-body">
+        <span class="tag ${p.canal==='WhatsApp'?'green':'navy'}" style="font-size:8.5px;">${p.canal}</span>
+        <div style="font-family:'Manrope';font-weight:700;font-size:13px;color:var(--navy);margin-top:6px;">${p.cliente}</div>
+        <div style="font-family:'Inter';font-size:10.5px;color:var(--gray-600);margin-top:3px;">${p.origen} → ${p.destino} · ${p.cabezas}${typeof p.cabezas==='number'?' cabezas':''}</div>
+        <div style="font-family:'JetBrains Mono';font-size:9.5px;color:var(--gray-500);margin-top:5px;">Fecha: ${p.fecha} · Km est.: ${p.km}</div>
+        <div class="card" style="padding:8px 10px;margin-top:9px;background:var(--gray-50);">
+          <div style="font-family:'Inter';font-size:10px;color:var(--gray-600);">Tarifa estándar ${money(tarifa)}/km × ${p.km} km ≈ <b>${money(monto)}</b></div>
+        </div>
+        ${actionsHtml}
+      </div>`;
+    window.__lnCerrarDetalle = function(){ selectedId = null; renderEquipo(); };
+  }
+
+  window.__lnAprobarPropuesta = function(id){ PEDIDOS.find(x=>x.id===id).estado = 'aceptado'; renderEquipo(); };
+  window.__lnRechazarPropuesta = function(id){ PEDIDOS.find(x=>x.id===id).estado = 'aceptado'; renderEquipo(); };
+  window.__lnConfirmarPedido = function(id){ PEDIDOS.find(x=>x.id===id).estado = 'confirmado'; renderEquipo(); };
+  window.__lnAsignarChofer = function(id){
+    const p = PEDIDOS.find(x=>x.id===id);
+    const sel = document.getElementById('coord-chofer-select');
+    p.chofer = sel ? sel.value : CHOFERES.find(c=>c.habilitado).nombre;
+    p.estado = 'asignado';
+    renderEquipo();
+  };
+
+  // ---------------- flota ----------------
+  const CAMIONES_GPS = [
+    {patente:'AD 714 AP', chofer:'M. Suárez', estado:'En ruta', vel:'72 km/h', color:'#1E9E63'},
+    {patente:'AE 217 TS', chofer:'L. Fernández', estado:'En ruta', vel:'65 km/h', color:'#1E9E63'},
+    {patente:'AF 020 PN', chofer:'O. Ibarra', estado:'Detenido', vel:'0 km/h', color:'#D6455A'},
+    {patente:'ABC 123', chofer:'Ever López', estado:'En base', vel:'—', vtv:true, color:'#7A8494'},
+  ];
+  function renderFlota(el){
+    explain('Geolocalización en vivo de GESTYA — trae la posición de cada camión a la app del equipo, junto con los pedidos.');
+    el.innerHTML = `
+      <div class="appbar"><div class="appbar-title">Flota</div><div class="appbar-sub">GESTYA en vivo</div></div>
+      <div class="phone-body">
+        <img src="gestya-mapa.jpg" style="width:100%;border-radius:8px;display:block;margin-bottom:10px;">
+        ${CAMIONES_GPS.map(c=>`
+          <div class="card" style="padding:8px 10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div style="font-family:'Inter';font-weight:700;font-size:10.5px;">${c.patente}</div>
+              <div style="font-family:'Inter';font-size:9px;color:var(--gray-500);">${c.chofer}${c.vtv?' · <span style="color:var(--red);">VTV vencida</span>':''}</div>
+            </div>
+            <div style="text-align:right;">
+              <span class="tag" style="font-size:8px;background:${c.color}22;color:${c.color};">${c.estado}</span>
+              <div style="font-family:'JetBrains Mono';font-size:9px;color:var(--gray-500);margin-top:2px;">${c.vel}</div>
+            </div>
+          </div>`).join('')}
+        <div style="font-family:'Inter';font-size:9px;color:var(--gray-500);margin-top:4px;">No reemplaza a GESTYA — trae su información a la app del equipo.</div>
+      </div>`;
+  }
+
+  // ---------------- financiero / ejecutivo ----------------
+  const RENDICIONES = [
+    {viaje:'Azul → Cañuelas', factura:'A-004821', importe:196200, estado:'Pendiente', tag:'gold'},
+    {viaje:'Tandil → CABA', factura:'A-004798', importe:122300, estado:'Cobrado', tag:'green'},
+    {viaje:'9 de Julio → Rosario', factura:'A-004790', importe:310500, estado:'Vencido', tag:'red'},
+    {viaje:'Bolívar → Quequén', factura:'A-004784', importe:88900, estado:'Cobrado', tag:'green'},
+  ];
+  const VIATICOS = [
+    {chofer:'Ever López', adelantado:200000, reintegrado:42900, saldo:157100},
+    {chofer:'L. Fernández', adelantado:200000, reintegrado:61200, saldo:138800},
+    {chofer:'M. Suárez', adelantado:200000, reintegrado:18500, saldo:181500},
+  ];
+  function renderFin(el){
+    explain('Lo que se cobra, lo que está vencido, y las rendiciones y viáticos por chofer.');
+    el.innerHTML = `
+      <div class="appbar"><div class="appbar-title">Financiero</div></div>
+      <div class="phone-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
+          <div class="card" style="padding:9px;"><div style="font-size:8.5px;color:var(--gray-500);font-family:'Inter';font-weight:700;">A COBRAR HOY</div><div style="font-family:'JetBrains Mono';font-weight:700;font-size:13px;color:var(--navy);margin-top:3px;">${money(4180200)}</div></div>
+          <div class="card" style="padding:9px;"><div style="font-size:8.5px;color:var(--gray-500);font-family:'Inter';font-weight:700;">VENCIDO</div><div style="font-family:'JetBrains Mono';font-weight:700;font-size:13px;color:var(--red);margin-top:3px;">${money(920400)}</div></div>
+        </div>
+        <div style="font-family:'Inter';font-size:9.5px;font-weight:700;color:var(--gray-500);margin-bottom:6px;">RENDICIONES POR VIAJE</div>
+        ${RENDICIONES.map(r=>`<div class="card" style="padding:8px 10px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center;"><div><div style="font-family:'Inter';font-weight:700;font-size:10px;">${r.viaje}</div><div style="font-family:'Inter';font-size:8.5px;color:var(--gray-500);">${r.factura}</div></div><div style="text-align:right;"><div style="font-family:'JetBrains Mono';font-weight:700;font-size:10.5px;">${money(r.importe)}</div><span class="tag ${r.tag}" style="font-size:8px;">${r.estado}</span></div></div>`).join('')}
+        <div style="font-family:'Inter';font-size:9.5px;font-weight:700;color:var(--gray-500);margin:10px 0 6px;">VIÁTICOS Y REINTEGROS</div>
+        ${VIATICOS.map(v=>`<div class="card" style="padding:8px 10px;margin-bottom:5px;"><div style="font-family:'Inter';font-weight:700;font-size:10px;">${v.chofer}</div><div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono';font-size:9px;color:var(--gray-500);margin-top:3px;"><span>Adel. ${money(v.adelantado)}</span><span>Reint. ${money(v.reintegrado)}</span><b style="color:var(--navy);">${money(v.saldo)}</b></div></div>`).join('')}
+      </div>`;
+  }
+
+  function renderEjec(el){
+    explain('La mirada de negocio para Dirección: rentabilidad, viajes y calificación.');
+    el.innerHTML = `
+      <div class="appbar"><div class="appbar-title">Ejecutivo</div></div>
+      <div class="phone-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
+          <div class="card" style="padding:9px;"><div style="font-size:8.5px;color:var(--gray-500);font-family:'Inter';font-weight:700;">RENTABILIDAD</div><div style="font-family:'JetBrains Mono';font-weight:700;font-size:14px;color:var(--green);margin-top:3px;">22,4%</div></div>
+          <div class="card" style="padding:9px;"><div style="font-size:8.5px;color:var(--gray-500);font-family:'Inter';font-weight:700;">VIAJES/MES</div><div style="font-family:'JetBrains Mono';font-weight:700;font-size:14px;color:var(--navy);margin-top:3px;">318</div></div>
+          <div class="card" style="padding:9px;"><div style="font-size:8.5px;color:var(--gray-500);font-family:'Inter';font-weight:700;">CALIFICACIÓN</div><div style="font-family:'JetBrains Mono';font-weight:700;font-size:14px;color:var(--gold);margin-top:3px;">4,6 / 5</div></div>
+          <div class="card" style="padding:9px;"><div style="font-size:8.5px;color:var(--gray-500);font-family:'Inter';font-weight:700;">FACTURACIÓN</div><div style="font-family:'JetBrains Mono';font-weight:700;font-size:12px;color:var(--navy);margin-top:3px;">${money(61900000)}</div></div>
+        </div>
+        <div class="card" style="padding:10px;margin-bottom:8px;">
+          <div style="font-family:'Inter';font-size:9.5px;font-weight:700;color:var(--gray-500);margin-bottom:8px;">VIAJES POR LÍNEA</div>
+          <div style="display:flex;align-items:flex-end;gap:14px;height:70px;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:24px;height:58px;background:var(--navy);border-radius:3px 3px 0 0;"></div><div style="font-size:8px;">Hacienda</div></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:24px;height:42px;background:var(--gold);border-radius:3px 3px 0 0;"></div><div style="font-size:8px;">Granos</div></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:24px;height:20px;background:var(--gray-300);border-radius:3px 3px 0 0;"></div><div style="font-size:8px;">Otros</div></div>
+          </div>
+        </div>
+        <div class="card" style="padding:10px;">
+          <div style="font-family:'Inter';font-size:9.5px;font-weight:700;color:var(--gray-500);margin-bottom:6px;">ALERTAS</div>
+          <div style="font-family:'Inter';font-size:9.5px;color:var(--gray-700);line-height:1.5;">· 2 clientes con vencidos.<br>· 1 corredor con caída de viajes.<br>· IA: 32% de comentarios menciona demoras en la carga.</div>
+        </div>
+      </div>`;
+  }
+
+  function renderEquipo(){
+    const el = document.getElementById('equipo-content');
+    if(!equipoAuthed) return renderAuth(el);
+    if(equipoTab === 'pedidos') return renderPedidos(el);
+    if(equipoTab === 'flota') return renderFlota(el);
+    if(equipoTab === 'fin') return renderFin(el);
+    return renderEjec(el);
+  }
+
+  renderEquipo();
+})();
+</script>
+</body>
+</html>
